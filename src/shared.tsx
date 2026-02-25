@@ -19,3 +19,30 @@ export function execAwsm(command: string): string {
     throw err;
   }
 }
+
+export function getDefaultBrowserBundleId(): string | undefined {
+  try {
+    const launchServicesPath = `${process.env.HOME}/Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist`;
+    const result = execSync(`/usr/bin/plutil -extract LSHandlers json -o - "${launchServicesPath}"`);
+    const handlers = JSON.parse(result.toString()) as Array<Record<string, string>>;
+    const handler = handlers.find((entry) => entry.LSHandlerURLScheme === "https")
+      || handlers.find((entry) => entry.LSHandlerURLScheme === "http");
+
+    return handler?.LSHandlerRoleAll;
+  } catch (err) {
+    console.error("Error reading default browser:", err);
+    return undefined;
+  }
+}
+
+export function openUrlWithBundleId(url: string, bundleId: string): void {
+  if (process.platform === "darwin") {
+    execSync(`/usr/bin/open -b "${bundleId}" "${url}"`);
+  } else if (process.platform === "win32") {
+    // Windows does not support macOS bundle identifiers; open with the default handler.
+    execSync(`start "" "${url}"`, { shell: "cmd.exe" });
+  } else {
+    // Fallback for other platforms: open with the default handler if available.
+    execSync(`open "${url}"`);
+  }
+}

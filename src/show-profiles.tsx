@@ -1,5 +1,5 @@
 import { ActionPanel, Action, Icon, List, Image, showToast, Toast, open } from "@raycast/api";
-import { execAwsm } from "./shared";
+import { execAwsm, getDefaultBrowserBundleId, openUrlWithBundleId } from "./shared";
 import { useEffect, useState } from "react";
 
 const ITEMS = Array.from(Array(3).keys()).map((key) => {
@@ -45,13 +45,15 @@ export default function Command() {
     loadProfiles();
   }, []);
 
-  const profiles: Profile[] | undefined = data ? (() => {
-    try {
-      return JSON.parse(data);
-    } catch {
-      return undefined;
-    }
-  })() : undefined;
+  const profiles: Profile[] | undefined = data
+    ? (() => {
+        try {
+          return JSON.parse(data);
+        } catch {
+          return undefined;
+        }
+      })()
+    : undefined;
 
   useEffect(() => {
     if (error) {
@@ -63,7 +65,7 @@ export default function Command() {
     }
   }, [error]);
 
-  const setProfile = async (profile: Profile) => {
+  const setProfile = async (profile: Profile): Promise<boolean> => {
     const toast = await showToast({
       style: Toast.Style.Animated,
       title: "Setting profile...",
@@ -75,10 +77,12 @@ export default function Command() {
       toast.style = Toast.Style.Success;
       toast.title = "Profile set";
       toast.message = profile.name;
+      return true;
     } catch (error) {
       toast.style = Toast.Style.Failure;
       toast.title = "Failed to set profile";
       toast.message = String(error);
+      return false;
     }
   };
 
@@ -90,13 +94,36 @@ export default function Command() {
 
     try {
       const result = execAwsm(`console -n -p ${profile.name}`);
-      open(result);
+      const defaultBrowser = getDefaultBrowserBundleId();
+      const isFirefoxDefault =
+        defaultBrowser === "org.mozilla.firefox" ||
+        defaultBrowser === "org.mozilla.firefoxdeveloperedition" ||
+        defaultBrowser === "org.mozilla.nightly" ||
+        defaultBrowser === "app.zen-browser.zen";
+
+      if (isFirefoxDefault) {
+        const containerUrl = `ext+container:name=${encodeURIComponent(profile.name)}&url=${encodeURIComponent(result)}`;
+        const bundleId = defaultBrowser;
+        openUrlWithBundleId(containerUrl, bundleId);
+      } else {
+        open(result);
+      }
       toast.hide();
     } catch (error) {
       toast.style = Toast.Style.Failure;
       toast.title = "Failed to open console";
       toast.message = String(error);
     }
+  };
+
+  const setProfileAndOpenConsole = async (profile: Profile) => {
+    const didSetProfile = await setProfile(profile);
+
+    if (!didSetProfile) {
+      return;
+    }
+
+    await openConsole(profile);
   };
 
   // Group profiles by sso_session
@@ -139,9 +166,24 @@ export default function Command() {
                 accessories={[{ icon: Icon.Globe, text: profile.region }]}
                 actions={
                   <ActionPanel>
-                    <Action title="Set Profile" onAction={() => setProfile(profile)} />
-                    <Action title="Open Console" onAction={() => openConsole(profile)} />
-                    <Action.CopyToClipboard title="Copy Account ID" content={profile.account_id} />
+                    <Action title="Set Profile" icon={Icon.Checkmark} onAction={() => setProfile(profile)} />
+                    <Action
+                      title="Set Profile and Open Console"
+                      icon={Icon.Bolt}
+                      shortcut={{ modifiers: ["cmd", "shift"], key: "enter" }}
+                      onAction={() => setProfileAndOpenConsole(profile)}
+                    />
+                    <Action
+                      title="Open Console"
+                      icon={Icon.Globe}
+                      shortcut={{ modifiers: ["cmd"], key: "o" }}
+                      onAction={() => openConsole(profile)}
+                    />
+                    <Action.CopyToClipboard
+                      title="Copy Account ID"
+                      icon={Icon.Clipboard}
+                      content={profile.account_id}
+                    />
                   </ActionPanel>
                 }
               />
