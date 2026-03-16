@@ -8,6 +8,13 @@ const defaultEnv = {
   BROWSER: "/usr/bin/open",
 };
 
+export const FIREFOX_BUNDLE_IDS = [
+  "org.mozilla.firefox",
+  "org.mozilla.firefoxdeveloperedition",
+  "org.mozilla.nightly",
+  "app.zen-browser.zen",
+];
+
 export function execAwsm(command: string): string {
   try {
     const result = execSync(`${awsmPath} ${command}`, {
