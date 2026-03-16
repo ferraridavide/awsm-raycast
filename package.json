@@ -19,6 +19,12 @@
       "title": "Show AWS Profiles",
       "description": "List and switch between AWS profiles using awsm.",
       "mode": "view"
+    },
+    {
+      "name": "clear-sessions",
+      "title": "Clear AWS Sessions",
+      "description": "Clear active AWS sessions using awsm clear.",
+      "mode": "no-view"
     }
   ],
   "dependencies": {
