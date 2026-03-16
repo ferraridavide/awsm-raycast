@@ -1,5 +1,5 @@
 import { ActionPanel, Action, Icon, List, Image, showToast, Toast, open } from "@raycast/api";
-import { execAwsm, getDefaultBrowserBundleId, openUrlWithBundleId } from "./shared";
+import { execAwsm, getDefaultBrowserBundleId, openUrlWithBundleId, FIREFOX_BUNDLE_IDS } from "./shared";
 import { useEffect, useState } from "react";
 
 const ITEMS = Array.from(Array(3).keys()).map((key) => {
@@ -95,15 +95,11 @@ export default function Command() {
     try {
       const result = execAwsm(`console -n -p ${profile.name}`);
       const defaultBrowser = getDefaultBrowserBundleId();
-      const isFirefoxDefault =
-        defaultBrowser === "org.mozilla.firefox" ||
-        defaultBrowser === "org.mozilla.firefoxdeveloperedition" ||
-        defaultBrowser === "org.mozilla.nightly" ||
-        defaultBrowser === "app.zen-browser.zen";
+      const isFirefoxDefault = defaultBrowser && FIREFOX_BUNDLE_IDS.includes(defaultBrowser);
 
       if (isFirefoxDefault) {
         const containerUrl = `ext+container:name=${encodeURIComponent(profile.name)}&url=${encodeURIComponent(result)}`;
-        const bundleId = defaultBrowser;
+        const bundleId = defaultBrowser as string;
         openUrlWithBundleId(containerUrl, bundleId);
       } else {
         open(result);
@@ -114,6 +110,52 @@ export default function Command() {
       toast.title = "Failed to open console";
       toast.message = String(error);
     }
+  };
+
+  const getFirefoxBundleId = (): string | undefined => {
+    const defaultBrowser = getDefaultBrowserBundleId();
+    if (defaultBrowser && FIREFOX_BUNDLE_IDS.includes(defaultBrowser)) {
+      return defaultBrowser;
+    }
+    // Try to find any installed Firefox version
+    // On macOS, we can check if the app exists, but for simplicity we can try the first one
+    // or assume org.mozilla.firefox is common.
+    // Ideally we should verify installation, but Raycast openUrlWithBundleId will fail gracefully or we can catch it.
+    return "org.mozilla.firefox";
+  };
+
+  const openInFirefoxContainer = async (profile: Profile) => {
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: "Opening in Firefox Container...",
+    });
+
+    try {
+      const result = execAwsm(`console -n -p ${profile.name}`);
+      const firefoxId = getFirefoxBundleId();
+
+      if (firefoxId) {
+        const containerUrl = `ext+container:name=${encodeURIComponent(profile.name)}&url=${encodeURIComponent(result)}`;
+        openUrlWithBundleId(containerUrl, firefoxId);
+        toast.hide();
+      } else {
+        throw new Error("Firefox not found");
+      }
+    } catch (error) {
+      toast.style = Toast.Style.Failure;
+      toast.title = "Failed to open in Firefox";
+      toast.message = String(error);
+    }
+  };
+
+  const setProfileAndOpenConsoleInFirefox = async (profile: Profile) => {
+    const didSetProfile = await setProfile(profile);
+
+    if (!didSetProfile) {
+      return;
+    }
+
+    await openInFirefoxContainer(profile);
   };
 
   const setProfileAndOpenConsole = async (profile: Profile) => {
@@ -188,6 +230,18 @@ export default function Command() {
                       icon={Icon.Globe}
                       shortcut={{ modifiers: ["cmd"], key: "o" }}
                       onAction={() => openConsole(profile)}
+                    />
+                    <Action
+                      title="Set Profile and Open Console in Firefox"
+                      icon={Icon.Bird}
+                      shortcut={{ modifiers: ["cmd", "opt"], key: "f" }}
+                      onAction={() => setProfileAndOpenConsoleInFirefox(profile)}
+                    />
+                    <Action
+                      title="Open in Firefox Container"
+                      icon={Icon.Bird}
+                      shortcut={{ modifiers: ["cmd", "shift"], key: "f" }}
+                      onAction={() => openInFirefoxContainer(profile)}
                     />
                     <Action.CopyToClipboard
                       title="Copy Account ID"
