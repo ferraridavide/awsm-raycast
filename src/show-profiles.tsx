@@ -109,12 +109,22 @@ export default function Command() {
     return acc;
   }, {});
 
+  const sortedGroupEntries = groupedProfiles
+    ? Object.entries(groupedProfiles).sort(([, aProfiles], [, bProfiles]) => {
+        const aHasActive = aProfiles.some((p) => p.is_active);
+        const bHasActive = bProfiles.some((p) => p.is_active);
+        if (aHasActive && !bHasActive) return -1;
+        if (!aHasActive && bHasActive) return 1;
+        return 0;
+      })
+    : undefined;
+
   return (
     <List isLoading={isLoading}>
-      {groupedProfiles &&
-        Object.entries(groupedProfiles).map(([session, sessionProfiles]) => (
+      {sortedGroupEntries &&
+        sortedGroupEntries.map(([session, sessionProfiles]) => (
           <List.Section key={session} title={session}>
-            {sessionProfiles.map((profile) => (
+            {[...sessionProfiles].sort((a, b) => (a.is_active ? -1 : b.is_active ? 1 : 0)).map((profile) => (
               <List.Item
                 key={profile.name}
                 icon={
