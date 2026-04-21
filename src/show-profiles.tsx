@@ -1,16 +1,6 @@
-import { ActionPanel, Action, Icon, List, Image, showToast, Toast, open } from "@raycast/api";
+import { ActionPanel, Action, Icon, List, Image, showToast, Toast, open, Form, useNavigation } from "@raycast/api";
 import { execAwsm, getDefaultBrowserBundleId, openUrlWithBundleId, FIREFOX_BUNDLE_IDS } from "./shared";
 import { useEffect, useState } from "react";
-
-const ITEMS = Array.from(Array(3).keys()).map((key) => {
-  return {
-    id: key,
-    icon: Icon.Bird,
-    title: "Title " + key,
-    subtitle: "Subtitle",
-    accessory: "Accessory",
-  };
-});
 
 interface Profile {
   name: string;
@@ -20,10 +10,49 @@ interface Profile {
   sso_account_id: string;
   sso_role_name: string;
   sso_session: string;
+  mfa_serial: string;
   is_active: boolean;
 }
 
+function MfaForm({ profile, actionTitle, onSubmit }: { profile: Profile; actionTitle: string; onSubmit: (token: string) => void }) {
+  const { pop } = useNavigation();
+  const [tokenError, setTokenError] = useState<string | undefined>(undefined);
+
+  return (
+    <Form
+      navigationTitle={`MFA for ${profile.name}`}
+      actions={
+        <ActionPanel>
+          <Action.SubmitForm
+            title={actionTitle}
+            onSubmit={(values: { token: string }) => {
+              const token = values.token.trim();
+              if (!/^\d{6}$/.test(token)) {
+                setTokenError("Token must be a 6-digit number");
+                return;
+              }
+              pop();
+              onSubmit(token);
+            }}
+          />
+        </ActionPanel>
+      }
+    >
+      <Form.Description text={`Profile "${profile.name}" requires MFA (${profile.mfa_serial})`} />
+      <Form.TextField
+        id="token"
+        title="MFA Token"
+        placeholder="123456"
+        error={tokenError}
+        onChange={() => setTokenError(undefined)}
+        autoFocus
+      />
+    </Form>
+  );
+}
+
 export default function Command() {
+  const { push } = useNavigation();
   const [data, setData] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | undefined>(undefined);
@@ -65,18 +94,19 @@ export default function Command() {
     }
   }, [error]);
 
-  const setProfile = async (profile: Profile): Promise<boolean> => {
+  const performSetProfile = async (profile: Profile, mfaToken?: string, afterSuccess?: () => Promise<void>): Promise<boolean> => {
     const toast = await showToast({
       style: Toast.Style.Animated,
       title: "Setting profile...",
     });
 
     try {
-      execAwsm(`profile set ${profile.name}`);
-      loadProfiles(); // Refresh list to show new active profile
+      execAwsm(`profile set ${profile.name}`, mfaToken);
+      loadProfiles();
       toast.style = Toast.Style.Success;
       toast.title = "Profile set";
       toast.message = profile.name;
+      await afterSuccess?.();
       return true;
     } catch (error) {
       toast.style = Toast.Style.Failure;
@@ -84,6 +114,27 @@ export default function Command() {
       toast.message = String(error);
       return false;
     }
+  };
+
+  const setProfile = async (profile: Profile): Promise<boolean> => {
+    if (profile.mfa_serial) {
+      // Try without MFA first—if cached session exists and is valid, awsm won't prompt
+      try {
+        execAwsm(`profile set ${profile.name}`);
+        loadProfiles();
+        await showToast({
+          style: Toast.Style.Success,
+          title: "Profile set",
+          message: profile.name,
+        });
+        return true;
+      } catch {
+        // Session not cached or expired—prompt for MFA
+        push(<MfaForm profile={profile} actionTitle="Set Profile" onSubmit={(token) => performSetProfile(profile, token)} />);
+        return false;
+      }
+    }
+    return performSetProfile(profile);
   };
 
   const openConsole = async (profile: Profile) => {
@@ -106,6 +157,12 @@ export default function Command() {
       }
       toast.hide();
     } catch (error) {
+      // If MFA is required, show the form
+      if (profile.mfa_serial) {
+        toast.hide();
+        push(<MfaForm profile={profile} actionTitle="Open Console" onSubmit={(token) => performSetProfile(profile, token, () => openConsole(profile))} />);
+        return;
+      }
       toast.style = Toast.Style.Failure;
       toast.title = "Failed to open console";
       toast.message = String(error);
@@ -142,6 +199,12 @@ export default function Command() {
         throw new Error("Firefox not found");
       }
     } catch (error) {
+      // If MFA is required, show the form
+      if (profile.mfa_serial) {
+        toast.hide();
+        push(<MfaForm profile={profile} actionTitle="Open in Firefox Container" onSubmit={(token) => performSetProfile(profile, token, () => openInFirefoxContainer(profile))} />);
+        return;
+      }
       toast.style = Toast.Style.Failure;
       toast.title = "Failed to open in Firefox";
       toast.message = String(error);
@@ -149,23 +212,13 @@ export default function Command() {
   };
 
   const setProfileAndOpenConsoleInFirefox = async (profile: Profile) => {
-    const didSetProfile = await setProfile(profile);
-
-    if (!didSetProfile) {
-      return;
-    }
-
-    await openInFirefoxContainer(profile);
+    const success = await setProfile(profile);
+    if (success) await openInFirefoxContainer(profile);
   };
 
   const setProfileAndOpenConsole = async (profile: Profile) => {
-    const didSetProfile = await setProfile(profile);
-
-    if (!didSetProfile) {
-      return;
-    }
-
-    await openConsole(profile);
+    const success = await setProfile(profile);
+    if (success) await openConsole(profile);
   };
 
   // Group profiles by sso_session
