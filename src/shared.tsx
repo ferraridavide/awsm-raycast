@@ -15,15 +15,20 @@ export const FIREFOX_BUNDLE_IDS = [
   "app.zen-browser.zen",
 ];
 
-export function execAwsm(command: string): string {
+export function execAwsm(command: string, mfaToken?: string): string {
   try {
     const result = execSync(`${awsmPath} ${command}`, {
       env: defaultEnv,
+      input: mfaToken !== undefined ? mfaToken + "\n" : "",
+      timeout: 30000,
     });
     return result.toString().trim();
-  } catch (err) {
-    console.error("Error executing awsm command:", err);
-    throw err;
+  } catch (err: unknown) {
+    const spawnErr = err as { stderr?: { toString(): string }; message?: string };
+    const stderr = spawnErr.stderr?.toString().trim();
+    const message = stderr || spawnErr.message || String(err);
+    console.error("Error executing awsm command:", message);
+    throw new Error(message);
   }
 }
 
